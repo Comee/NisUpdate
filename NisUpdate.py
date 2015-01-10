@@ -170,18 +170,30 @@ class LogFrame(tk.Toplevel):
         # 直接完全替换
         self.replace_all = False
         
-        # 排除操作目录
-        self.exclusion_dirs = ["WEB-INF\orcus\grab", "WEB-INF\dlls"]
+        # 排除操作目录  针对所有操作
+        self.exclusion_dirs = ["WEB-INF\orcus\grab", "WEB-INF\dlls", "WEB-INF\rep-files"]
         self.exclusion_files = ["WEB-INF\orcus\diagnosis.xml"]
-        self.merge_xml_files = ["WEB-INF\orcus_web.xml"]
         
-        self.exclusion_element_keys = ["localhost", "web.context.url","server.path","Course.Parse.loader"]  # 不覆盖的element元素
-        self.BO_DELETE_ELEMENT = False
+        # 排除的待合并的文件
+        self.merge_xml_files = ["WEB-INF\orcus_web.xml", "WEB-INF\orcus\diagnosis.xml"]
+        
+        # 必须要进行先删除，后拷贝操作的目录
+        self.force_delete_update_directory = ["pages", "WEB-INF\classes"]
+        
+        # 排除的key 值不是true或false的都属于被排除的
+        self.exclusion_element_keys = ["localhost", "web.context.url", "server.path", "Course.Parse.loader", "Course.Parse.loader.ftp.url", "Course.Parse.loader.dsName", "Course.Parse.loader.ws.address"]  # 不覆盖的element元素
+        # 针对上一项目的补充，如值不是true或false 但是需要进行更新， 例如App.Version
+        self.must_update_element_keys = ["App.Version"]
+        # 与上2项结合使用：开关选项 orcusweb.xml中element元素值是true或false的元素是需要更新的，其他的element元素是不需要更新的；若为true，则其他的element元素也更新
+        self.VALUE_TRUE_FALSE_PROTECTED = False
+        
+        self.BO_DELETE_ELEMENT = True
         self.OC_UPDATE_ELEMENT = True
         self.BO_DELETE_TASK = True
         self.OC_UPDATE_TASK = True
-        self.BO_DELETE_FILE = False
-        self.BO_DELETE_EMPTY_DIR = False
+        self.BO_DELETE_FILE = True
+        self.BO_DELETE_EMPTY_DIR = True
+        
         
         self.logger = logger
         self.initconfig()
@@ -210,6 +222,7 @@ class LogFrame(tk.Toplevel):
         T.tag_configure('big_center', justify='center', foreground='#476042', font=('黑体', 20, 'bold'))
         T.tag_configure('color_info', foreground='#476042', font=('宋体', 12))
         T.tag_configure('color_error', foreground='red', font=('宋体', 12, 'bold'))
+        T.tag_configure('color_important', foreground='green', font=('宋体', 12, 'bold'))
         
         # 防止编辑Text
         T.bind("<KeyPress>", lambda e : "break")
@@ -255,30 +268,74 @@ class LogFrame(tk.Toplevel):
         try:
             if self.replace_all == True:
                 self.info("更新模式为直接替换整个文件夹...")
+                
                 self.info("清空目录%s" % self.oldpath)
                 shutil.rmtree(self.oldpath, True, None)
                 self.info("目录%s清空完成" % self.oldpath)
+                
                 self.info("开始将新文件%s拷贝到%s下" % (self.newpath, self.oldpath))
                 shutil.copytree(self.newpath, self.oldpath, True)
-                self.info("文件拷贝完成，更新结束！")
+                self.info("文件拷贝完成！")
+                
+                self.info("开始清空work目录...")
+                shutil.rmtree(r"%s/work" % TOMCAT_HOME, True, None)
+                self.info("work目录清空成功，NIS更新结束!")
+                
                 return 
             else:
                 self.info("更新模式为单文件分析...")
                 self.info("开始分析文件目录结构...")
                 alllist = walk_list(self.oldpath, self.newpath)
+                
                 self.info("开始更新...")
                 self.procee_walklist(alllist)
                 self.info("常规更新结束")
-                self.info("开始更新orcus_web.xml...")
+                
+                self.process_force_delete_update_direcory()
+                
+                self.info("开始分析orcus_web.xml...")
                 self.merge_orcusweb_xml()
-                self.info("orcus_web.xml更新结束")
+#                 self.info("orcus_web.xml更新结束")
+                self.info("orcus_web.xml更新提醒结束")
+                
+                self.info("开始分析diagnosis.xml...")
+                self.merge_diagnosis_xml()
+                self.info("diagnosis.xml更新提醒结束")
+                
+                self.info("开始清空work目录...")
+                shutil.rmtree(r"%s/work" % TOMCAT_HOME, True, None)
+                self.info("work目录清空成功！")
                 
                 self.info("NIS系统更新结束")
+                return
             
         except Exception as ex:
             self.error("系统更新出错：%s" % ex)
         finally:
             self.line_finished()
+    
+    
+    #----------------------------------------------------------------------
+    '''
+    description:处理force_delete_update_direcory目录
+    '''
+    def process_force_delete_update_direcory(self):
+        for dir0 in self.force_delete_update_directory:
+            old_path = self.oldpath.replace("/", "\\");
+            new_path = self.newpath.replace("/", "\\");
+            
+            self.info("清空目录%s" % (old_path + "\\" + dir0))
+            shutil.rmtree(old_path + "\\" + dir0, True, None)
+            self.info("目录%s清空完成" % (old_path + "\\" + dir0))
+            
+            self.info("开始将新文件%s拷贝到%s下" % (new_path + "\\" + dir0, old_path + "\\" + dir0))
+            shutil.copytree(new_path + "\\" + dir0, old_path + "\\" + dir0, True)
+            self.info("文件拷贝完成！")
+        return
+            
+            
+            
+            
     
     #----------------------------------------------------------------------
     '''
@@ -338,6 +395,19 @@ class LogFrame(tk.Toplevel):
         shutil.rmtree(dirname, True, None)
         self.info("目录%s清空完成" % dirname)
     #----------------------------------------------------------------------
+    
+    '''
+    description:diagnosis.xml
+    '''
+    def merge_diagnosis_xml(self):
+        lfile = os.path.join(self.oldpath, self.merge_xml_files[1]).replace("\\", "/")
+        self.info("原始diagnosis.xml文件路径为：%s" % lfile)
+        
+        rfile = os.path.join(self.newpath, self.merge_xml_files[1]).replace("\\", "/")
+        self.info("新diagnosis.xml文件路径为：%s" % rfile)
+        self.important("请用Beyond Compare工具更新WEB-INF\orcus\diagnosis.xml 和 WEB-INF\web.xml")
+        
+        
     '''
     description:合并orcus_web.xml文件
     '''    
@@ -373,26 +443,43 @@ class LogFrame(tk.Toplevel):
             if tag[1] and tag[2] and tag[3]:
                 pass
             elif tag[1] and tag[2] and not tag[3]:
+                if tag[0]["key"].strip() in self.must_update_element_keys:
+                    self.important("key=%s的element元素为必须更新的元素，请更新" % tag[0]["key"].strip())
+#                     self.info("key=%s的element元素为必须更新的元素，所以更新" % tag[0]["key"].strip())
+#                     tag[0]["value"] = tag[4]["value"]
                 # 新的(right)值与旧的(left)值不一致，新的替换旧的
-                if tag[0]["key"].strip() in self.exclusion_element_keys:
-                    self.info("key=%s的element元素为受保护的元素，不进行更新" % tag[0]["key"].strip())
                 else:
-                    self.info("key=%s的element元素的value属性不同，原始的为：%s，新的为：%s，将进行更新" % (tag[0]["key"].strip(), tag[0]["value"], tag[4]["value"]))
-                    tag[0]["value"] = tag[4]["value"]
+                    if self.is_exclusion_element(tag[0]["value"].strip()) or tag[0]["key"].strip() in self.exclusion_element_keys:
+                        self.important("key=%s的element元素基本不需要更新，请慎重更改" % tag[0]["key"].strip())
+#                         self.info("key=%s的element元素为受保护的元素，不进行更新" % tag[0]["key"].strip())
+                    else:
+                        self.important("key=%s的element元素的value属性不同，原始的为：%s，新的为：%s，请更新" % (tag[0]["key"].strip(), tag[0]["value"], tag[4]["value"]))
+#                         self.info("key=%s的element元素的value属性不同，原始的为：%s，新的为：%s，将进行更新" % (tag[0]["key"].strip(), tag[0]["value"], tag[4]["value"]))
+#                         tag[0]["value"] = tag[4]["value"]
             elif tag[1] and not tag[2]:
                 # 旧的有，新的没有
-                if self.BO_DELETE_ELEMENT:
-                    self.info("BO_DELETE_ELEMENT的配置为%s，所以删除新nis中没有的element元素%s" % (self.BO_DELETE_ELEMENT, tag[0]))
-                    tag[0].decompose()
-                else:
-                    self.info("BO_DELETE_ELEMENT的配置为%s，所以保留新nis中没有的element元素%s" % (self.BO_DELETE_ELEMENT, tag[0]))
+                self.important("key=%s的element元素的在新版本中已被删除，请更新" % (tag[0]["key"].strip()))
+                
+#                 if self.BO_DELETE_ELEMENT:
+#                     self.info("BO_DELETE_ELEMENT的配置为%s，所以删除新nis中没有的element元素%s" % (self.BO_DELETE_ELEMENT, tag[0]))
+#                     tag[0].decompose()
+#                 else:
+#                     self.info("BO_DELETE_ELEMENT的配置为%s，所以保留新nis中没有的element元素%s" % (self.BO_DELETE_ELEMENT, tag[0]))
             elif not tag[1] and tag[2]:
                 # 旧的没有，新的有
-                if self.OC_UPDATE_ELEMENT:
-                    self.info("OC_UPDATE_ELEMENT的配置为%s，所以添加新nis中存在而旧nis中不存在的element元素%s" % (self.BO_DELETE_ELEMENT, tag[0]))
-                    element_parent.append(tag[0])
-                else:
-                    self.info("OC_UPDATE_ELEMENT的配置为%s，所以不添加新nis中存在而旧nis中不存在的element元素%s" % (self.BO_DELETE_ELEMENT, tag[0]))
+                self.important("key=%s的element元素的为新增加的元素，请更新" % (tag[0]["key"].strip()))
+#                 if self.OC_UPDATE_ELEMENT:
+#                     self.info("OC_UPDATE_ELEMENT的配置为%s，所以添加新nis中存在而旧nis中不存在的element元素%s" % (self.OC_UPDATE_ELEMENT, tag[0]))
+#                     element_parent.append(tag[0])
+#                 else:
+#                     self.info("OC_UPDATE_ELEMENT的配置为%s，所以不添加新nis中存在而旧nis中不存在的element元素%s" % (self.OC_UPDATE_ELEMENT, tag[0]))
+    
+    def is_exclusion_element(self, tag_value):
+        if self.VALUE_TRUE_FALSE_PROTECTED:
+            return True
+        elif tag_value == "true" or tag_value == "false":
+            return False
+        return True
             
     def process_task(self, all_task_tags):
         if len(all_task_tags) == 0:
@@ -403,17 +490,19 @@ class LogFrame(tk.Toplevel):
             if tag[1] and tag[2]:
                 pass
             if not tag[1] and tag[2]:
-                if self.OC_UPDATE_TASK:
-                    self.info("OC_UPDATE_TASK的配置为%s，所以添加新nis中存在而旧nis中不存在的task元素%s" % (self.BO_DELETE_ELEMENT, tag[0]))
-                    task_parent.append(tag[0])
-                else:
-                    self.info("OC_UPDATE_TASK的配置为%s，所以不添加新nis中存在而旧nis中不存在的task元素%s" % (self.BO_DELETE_ELEMENT, tag[0]))
+                self.important("task元素%s为新版本中增加的元素，请更新" % tag[0])
+#                 if self.OC_UPDATE_TASK:
+#                     self.info("OC_UPDATE_TASK的配置为%s，所以添加新nis中存在而旧nis中不存在的task元素%s" % (self.BO_DELETE_ELEMENT, tag[0]))
+#                     task_parent.append(tag[0])
+#                 else:
+#                     self.info("OC_UPDATE_TASK的配置为%s，所以不添加新nis中存在而旧nis中不存在的task元素%s" % (self.BO_DELETE_ELEMENT, tag[0]))
             if tag[1] and not tag[2]:
-                if self.BO_DELETE_TASK:
-                    self.info("BO_DELETE_TASK的配置为%s，所以删除新nis中不存在而旧nis中存在的task元素%s" % (self.BO_DELETE_ELEMENT, tag[0]))
-                    tag[0].decompose()
-                else:
-                    self.info("BO_DELETE_TASK的配置为%s，所以保留新nis中不存在而旧nis中存在的task元素%s" % (self.BO_DELETE_ELEMENT, tag[0]))
+                self.important("task元素%s为新版本中删除的元素，请更新" % tag[0])
+#                 if self.BO_DELETE_TASK:
+#                     self.info("BO_DELETE_TASK的配置为%s，所以删除新nis中不存在而旧nis中存在的task元素%s" % (self.BO_DELETE_ELEMENT, tag[0]))
+#                     tag[0].decompose()
+#                 else:
+#                     self.info("BO_DELETE_TASK的配置为%s，所以保留新nis中不存在而旧nis中存在的task元素%s" % (self.BO_DELETE_ELEMENT, tag[0]))
     
     def filter_element(self, element_key):
             if element_key.strip() in self.exclusion_element_keys:
@@ -427,17 +516,19 @@ class LogFrame(tk.Toplevel):
         rfile = newfile
         
         oldfile = open(lfile, 'r', encoding="UTF-8")
-        soup = BeautifulSoup(oldfile)
+        soup = BeautifulSoup(oldfile, "xml")
+        
         
         element_and_task_tags = SoupStrainer(["element", "task"])
-        rsoup = BeautifulSoup(open(rfile, 'r', encoding="UTF-8"), parse_only=element_and_task_tags)
+        rsoup = BeautifulSoup(open(rfile, 'r', encoding="UTF-8"), "xml", parse_only=element_and_task_tags)
         
         all_element_tags = []
         allkeys = []
         for tag in soup("element"):
             d = [ tag, True, False, False, None ] 
             if  tag["key"] in allkeys:
-                self.info("原始文件%s存在多个key值为%s的element元素，程序将保留第一个" % (lfile, tag["key"]))
+                self.important("原始文件%s存在多个key值为%s的element元素，请修改（只能保留一个）" % (lfile, tag["key"]))
+#                 self.info("原始文件%s存在多个key值为%s的element元素，程序将保留第一个" % (lfile, tag["key"]))
                 tag.next_sibling.next_sibling.replace_with("")  # 注释
                 tag.next_sibling.replace_with("")  # 换行符
                 tag.decompose()
@@ -465,8 +556,9 @@ class LogFrame(tk.Toplevel):
         for tag in soup("task"):
             d = [ tag, True, False]
             if tag.string.strip() in all_task_string:
-                self.info("原始文件%s存在多个值为%s的task元素，程序将保留第一个" % (lfile, tag.string.strip()))
-                tag.decompose()
+                self.important("原始文件%s存在多个值为%s的task元素，请修改（只能保留一个）" % (lfile, tag.string.strip()))
+#                 self.info("原始文件%s存在多个值为%s的task元素，程序将保留第一个" % (lfile, tag.string.strip()))
+#                 tag.decompose()
             else:
                 all_task_tags.append(d)
                 all_task_string.append(tag.string.strip())
@@ -487,13 +579,15 @@ class LogFrame(tk.Toplevel):
         
         oldfile.close()
         
-        self.info("开始将更新写入%s..." % lfile)
-        orcusweb_xml = soup.prettify("utf-8")
-        with open(lfile, "wb") as file:
-            file.write(orcusweb_xml)
-        self.info("写入成功")
-        
-        return orcusweb_xml
+#         self.info("开始将更新写入%s..." % lfile)
+#         orcusweb_xml = soup.prettify("utf-8")
+#         orcusweb_xml = soup.prettify("utf-8", formatter=None)
+#         
+#         with open(lfile, "wb") as file:
+#             file.write(orcusweb_xml)
+#         self.info("写入成功")
+#         
+#         return orcusweb_xml
     
     
     #----------------------------------------------------------------------
@@ -517,6 +611,13 @@ class LogFrame(tk.Toplevel):
         self.T.update()
         self.T.see(tk.END)
         
+    def important(self, msg):
+        self.logger.info(msg)
+        self.T.insert(tk.END, time.strftime(self.ISOTIMEFORMAT, time.localtime()) + "\n" + str(msg) + "\n\n" , "color_important")
+        self.T.update()
+        self.T.see(tk.END)
+        
+        
     def line_finished(self):
         self.logger.info("=======================================================\n")
         self.T.insert(tk.END, "\n" + 23 * "-" + "finished" + 23 * "-" + "\n\n", "center")
@@ -532,15 +633,17 @@ class LogFrame(tk.Toplevel):
         olddir = self.oldpath
         newdir = self.newpath
         for flist in alllist:
+            if self.filter_special(flist[0]):
+                self.info("需要特殊处理(受保护或待合并或待处理)的文件%s，已跳过" % flist[0])
+                continue;
             if flist[1]:
+                # 文件
                 if flist[2] and flist[3] and flist[4]:
-                    pass
+                    self.info("相同的文件%s，已跳过" % flist[0])
                 elif flist[2] and flist[3] and not flist[4]:
-                    if self.filter_special(flist[0]):
-                        self.info("需要特殊处理(受保护或待合并)的文件%s，已跳过" % flist[0])
-                    else:
-                        # 都存在但不同， 用right替换left
-                        shutil.copyfile(newdir + flist[0], olddir + flist[0])
+                    # 都存在但不同， 用right替换left
+                    self.info("文件都存在，但不同，用新文件替换旧文件%s" % flist[0])
+                    shutil.copyfile(newdir + flist[0], olddir + flist[0])
                 elif not flist[2] and flist[3]:
                     # left不存在，right复制到left
                     oldnewpath = ntpath.split(olddir + flist[0])[0]
@@ -556,6 +659,9 @@ class LogFrame(tk.Toplevel):
                         self.info("BO_DELETE_FILE的值为%s，所以保留旧nis存在而新nis不存在的文件%s" % (self.BO_DELETE_FILE, flist[0]))
             else:
                 # 空目录
+                if self.filter_special_dir(flist[0]):
+                    self.info("需要特殊处理(受保护或待合并或待处理)的目录%s，已跳过" % flist[0])
+                    continue;
                 if flist[2] and flist[3]:
                     # 都存在，啥都不做
                     pass
@@ -606,8 +712,6 @@ class LogFrame(tk.Toplevel):
             file = file[1:]
         if file in self.exclusion_files:
             return True
-        elif file in self.merge_xml_files:
-            return True
         return False
         
     
@@ -615,12 +719,24 @@ class LogFrame(tk.Toplevel):
     return 返回被exclusion_dirs过滤过的exclusion_files列表
     '''
     def exclusion_merge(self): 
+        for must_delete_update_dir in self.force_delete_update_directory:
+            if must_delete_update_dir not in self.exclusion_dirs:
+                self.exclusion_dirs.append(must_delete_update_dir)
         temp = []
         for file in self.exclusion_files:
             for directory in self.exclusion_dirs:
                 if not self.is_in_dir(directory, file):
                     temp.append(file)
+                    
+        for f in self.merge_xml_files:
+            if f not in temp:
+                temp.append(f)
+                
         self.exclusion_files = temp
+        
+        for k in self.must_update_element_keys:
+            if k in self.exclusion_element_keys:
+                self.exclusion_element_keys.remove(k)
     
     '''
     description:是否是procee_walklist不需要处理的文件
@@ -632,6 +748,13 @@ class LogFrame(tk.Toplevel):
             return True
         else:
             return False 
+        
+    def filter_special_dir(self, olddir):
+        if olddir[0:1] == "\\":
+            olddir = olddir[1:]
+        if olddir in self.exclusion_dirs:
+            return True
+        return False
 
         
     #----------------------------------------------------------------------        
@@ -655,8 +778,16 @@ class LogFrame(tk.Toplevel):
 class Application(tk.Frame):
     """"""
     
-    labelbuttons = ['Open Old Nis Directory...', 'Open New Nis Directory...', 'Update', 'OOMMonitor', '']
+#     labelbuttons = ['  单击选择当前nis文件夹...', '  单击选择新nis文件夹...', '更 新', 'OOMMonitor', '']
+#     normal bold italic
+#     fonts = [('楷体', 18, 'normal'), ('楷体', 18, 'normal'), ('宋体', 24, 'italic'), ('times', 24, 'italic'), ('times', 24, 'italic')]
+
+    labelbuttons = ['Open current nis directory...', 'Open new nis directory...', 'Update', 'OOMMonitor', '']
+#     normal bold italic
+    fonts = [('times', 12, 'normal'), ('times', 12, 'normal'), ('times', 24, 'italic'), ('times', 24, 'italic'), ('times', 24, 'italic')]
     labelbitmaps = ['', '', 'hourglass', '', 'questhead']
+    textalign = [tk.CENTER, tk.CENTER, tk.CENTER, tk.CENTER, tk.CENTER ]
+    bitmapalign = [tk.LEFT, tk.LEFT, tk.LEFT, tk.LEFT, tk.LEFT]
       
     #----------------------------------------------------------------------
     def __init__(self, master=None):
@@ -672,7 +803,7 @@ class Application(tk.Frame):
         self.backupCount = 5
         
         self.logger = self._getLogger()
-        self.initconfig()  # 由于initconfig里面使用日志记录，所以日志没法配置
+        self.initconfig()  # 由于initconfig里面使用日志记录，所以日志没法配置，如果要使日志可配置，请取消initconfig()中的日志记录。
         
         
         createBitmap(master)
@@ -763,10 +894,10 @@ class Application(tk.Frame):
             ct_hex = "%02x%02x%02x" % tuple(ct)
             bg_colour = '#' + "".join(ct_hex)
             
-            l = tk.Label(self.root, text=self.labelbuttons[i], fg='White' if brightness < 120 else 'Black', bg=bg_colour, compound=tk.LEFT, bitmap=self.labelbitmaps[i])
+            l = tk.Label(self.root, text=self.labelbuttons[i], fg='White' if brightness < 120 else 'Black', anchor=self.textalign[i], bg=bg_colour, compound=self.bitmapalign[i], bitmap=self.labelbitmaps[i])
             
-            if i > 1:
-                l.config(font=('times', 24, 'italic'))
+            if i >= 2:
+                l.config(font=self.fonts[i])
                 
             space = lambda x: x > 2 and 20 or 0
             l.place(x=50, y=80 + i * 50 + space(i), width=300, height=40)
@@ -807,6 +938,6 @@ class Application(tk.Frame):
 #----------------------------------------------------------------------
 
 root = tk.Tk()
-center_window(root, w=400, h=400, title="NIS UPDATE")
+center_window(root, w=400, h=400, title="自动更新nis系统  v1.0")
 app = Application(master=root)
 app.mainloop()

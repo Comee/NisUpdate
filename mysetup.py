@@ -17,7 +17,7 @@ options = {"py2exe":
                 "unbuffered" :False ,  # if true, use unbuffered binary stdout and stderr
                 "optimize": 2,
                 
-                'packages': 'encodings, pubsub, tkinter',
+                'packages': 'encodings, pubsub, tkinter, lxml',
                 "bundle_files": 2,
                 "dll_excludes": [],
                 "includes": [],
